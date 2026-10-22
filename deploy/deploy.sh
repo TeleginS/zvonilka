@@ -44,6 +44,11 @@ esac
 echo "==> building $IMAGE for $platform"
 docker buildx build --platform "$platform" -t "$IMAGE" --load .
 
+# Remembered so the previous image can be removed after the restart. Images
+# share the base and dependency layers, so each leftover costs only the changed
+# layers (more when dependencies change), but they pile up deploy after deploy.
+old_image=$(ssh "$HOST" "docker image inspect -f '{{.Id}}' '$IMAGE' 2>/dev/null || true")
+
 echo "==> shipping the image to $HOST"
 docker save "$IMAGE" | gzip | ssh "$HOST" 'gunzip | docker load'
 
@@ -59,3 +64,15 @@ fi
 
 echo "==> restarting the bot"
 ssh "$HOST" "cd '$DIR' && docker compose up -d --no-build --force-recreate && sleep 8 && docker compose logs --no-color --tail 5 bot"
+
+# Only our previous image, never a blanket prune: other projects share the server.
+new_image=$(ssh "$HOST" "docker image inspect -f '{{.Id}}' '$IMAGE'")
+if [[ -n "$old_image" && "$old_image" != "$new_image" ]]; then
+  if [[ -z "$(ssh "$HOST" "docker ps -aq --filter ancestor='$old_image'")" ]]; then
+    echo "==> removing the previous image ${old_image:7:12}"
+    ssh "$HOST" "docker image rm '$old_image' >/dev/null"
+  else
+    echo "==> previous image ${old_image:7:12} is still used by a container, keeping it"
+  fi
+fi
+ssh "$HOST" "df -h / | awk 'NR==2 {print \"==> server disk: \" \$5 \" used, \" \$4 \" free\"}'"
