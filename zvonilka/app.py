@@ -91,7 +91,7 @@ def build_components(
 
     tools: list[Tool] = []
     scheduler = None
-    system = system_prompt(None)
+    catalog = None
     if config.retell.enabled:
         calendar = GoogleCalendar(config.google, config.owner.calendar_ids) if config.google.enabled else None
         calls = CallService(
@@ -105,7 +105,10 @@ def build_components(
         )
         scheduler = Scheduler(db, calls.run, notifier, tz)
         tools = make_call_tools(calls, scheduler, scenarios, tz)
-        system = system_prompt(scenarios.catalog())
+        catalog = scenarios.catalog()
+
+    def system() -> str:
+        return system_prompt(catalog, config.owner, db.get_memory())
 
     assistant = Assistant(llm, db, tools, system=system, tz=tz)
     return Components(db=db, llm=llm, assistant=assistant, scheduler=scheduler)

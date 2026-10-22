@@ -76,6 +76,10 @@ class Database:
                 (chat_id, json.dumps(messages, ensure_ascii=False), updated_at.isoformat()),
             )
 
+    def clear_session(self, chat_id: int) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM sessions WHERE chat_id = ?", (chat_id,))
+
     # Scheduled calls (spec 8)
 
     def add_scheduled(self, chat_id: int, run_at: datetime, request: CallRequest) -> int:

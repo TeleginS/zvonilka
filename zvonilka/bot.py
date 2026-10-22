@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import httpx
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import NetworkError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -34,8 +37,29 @@ HELP = (
     "Напиши, куда и зачем позвонить, например: «позвони в ресторан +34 9xx xxx xxx, "
     "забронируй столик на двоих на завтра в 20:00». Перед звонком я покажу бриф с кнопками «Да / Нет».\n\n"
     "/memory <текст> — добавить или изменить факты о тебе; /memory — показать память\n"
-    "/calls — запланированные звонки"
+    "/calls — запланированные звонки\n"
+    "/new — начать диалог заново (сам сбрасывается после 2 часов паузы)"
 )
+
+
+T = TypeVar("T")
+SEND_ATTEMPTS = 3
+
+
+async def with_retries(send: Callable[[], Awaitable[T]], attempts: int = SEND_ATTEMPTS, delay: float = 1.0) -> T:
+    """Telegram connections drop now and then; one ConnectError must not lose a reply."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return await send()
+        except NetworkError as e:
+            # Only a failed connection: the request never reached Telegram, so a
+            # retry can't duplicate a message. TimedOut may have been delivered,
+            # BadRequest won't get better.
+            if type(e) is not NetworkError or attempt == attempts:
+                raise
+            log.warning("telegram request failed (%s), retry %d/%d", e, attempt, attempts - 1)
+            await asyncio.sleep(delay * attempt)
+    raise AssertionError("unreachable")
 
 
 def split_message(text: str, limit: int = TELEGRAM_LIMIT) -> list[str]:
@@ -54,7 +78,7 @@ class TelegramNotifier:
 
     async def send_text(self, chat_id: int, text: str) -> None:
         for chunk in split_message(text):
-            await self._bot.send_message(chat_id, chunk)
+            await with_retries(lambda: self._bot.send_message(chat_id, chunk))
 
     async def send_recording(self, chat_id: int, url: str, caption: str) -> None:
         try:
@@ -68,10 +92,12 @@ class TelegramNotifier:
             return
         filename = url.rsplit("/", 1)[-1].split("?", 1)[0] or "call.wav"
         try:
-            await self._bot.send_audio(chat_id, audio=audio, filename=filename, caption=caption)
+            await with_retries(lambda: self._bot.send_audio(chat_id, audio=audio, filename=filename, caption=caption))
         except Exception:
             log.info("sending recording as audio failed, sending as document", exc_info=True)
-            await self._bot.send_document(chat_id, document=audio, filename=filename, caption=caption)
+            await with_retries(
+                lambda: self._bot.send_document(chat_id, document=audio, filename=filename, caption=caption)
+            )
 
 
 class Confirmations:
@@ -91,7 +117,7 @@ class Confirmations:
                 InlineKeyboardButton("❌ Нет", callback_data=f"cf:{token}:0"),
             ]]
         )
-        message = await self._bot.send_message(chat_id, text, reply_markup=markup)
+        message = await with_retries(lambda: self._bot.send_message(chat_id, text, reply_markup=markup))
         try:
             return await asyncio.wait_for(future, CONFIRM_TIMEOUT)
         except TimeoutError:
@@ -119,13 +145,19 @@ class Handlers:
         app.add_handler(CommandHandler(["start", "help"], self.on_help))
         app.add_handler(CommandHandler("memory", self.on_memory))
         app.add_handler(CommandHandler("calls", self.on_calls))
+        app.add_handler(CommandHandler("new", self.on_new))
         app.add_handler(CallbackQueryHandler(self.on_confirm, pattern=r"^cf:"))
         app.add_handler(CallbackQueryHandler(self.on_cancel, pattern=r"^cc:"))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_text))
 
     def _allowed(self, update: Update) -> bool:
         chat = update.effective_chat
-        return chat is not None and is_allowed(chat.id, self._config)
+        if chat is None:
+            return False
+        if not is_allowed(chat.id, self._config):
+            log.info("ignoring chat %s: not in ALLOWED_CHAT_IDS", chat.id)
+            return False
+        return True
 
     async def on_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if self._allowed(update):
@@ -135,7 +167,10 @@ class Handlers:
         if not self._allowed(update):
             return
         chat_id = update.effective_chat.id
-        await context.bot.send_chat_action(chat_id, "typing")
+        try:
+            await context.bot.send_chat_action(chat_id, "typing")
+        except NetworkError:
+            log.info("typing indicator failed, continuing", exc_info=True)
         try:
             reply = await self._c.assistant.handle(
                 chat_id, update.effective_message.text, lambda text: self._confirmations.ask(chat_id, text)
@@ -162,6 +197,12 @@ class Handlers:
             return
         db.set_memory(updated)
         await self._notifier.send_text(update.effective_chat.id, f"Запомнил. Сейчас в памяти:\n{updated}")
+
+    async def on_new(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._allowed(update):
+            return
+        self._c.db.clear_session(update.effective_chat.id)
+        await update.effective_message.reply_text("Начинаем заново. Память (/memory) и запланированные звонки на месте.")
 
     async def on_calls(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._allowed(update):
@@ -205,6 +246,14 @@ class Handlers:
             await query.edit_message_text(f"{query.message.text}\n\nЭтот звонок уже не ждёт")
 
 
+async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    error = context.error
+    if isinstance(error, NetworkError):
+        log.warning("telegram network error: %s", error)
+    else:
+        log.error("unhandled error in a handler", exc_info=error)
+
+
 async def _post_init(app: Application) -> None:
     scheduler = app.bot_data.get("scheduler")
     if scheduler:
@@ -218,4 +267,5 @@ def build_application(config: Config) -> Application:
     components = build_components(config, notifier)
     app.bot_data["scheduler"] = components.scheduler
     Handlers(config, components, Confirmations(app.bot), notifier).register(app)
+    app.add_error_handler(_on_error)
     return app

@@ -267,6 +267,10 @@ them before the viewing.
 Claude with the system prompt "you are the user's personal assistant in
 Telegram, reply briefly, in Russian" and a set of tools. Call-related details:
 
+- the system prompt contains the owner's profile (name, Cyrillic name, phone,
+  time zone) and the whole memory text (7.2). Without them the bot asks the
+  user what it already knows, can't handle "call me", and intake can't take
+  facts from memory (5.4);
 - the owner's time zone and the current time are passed with every message;
 - dialog context persists between messages (one session per chat); after a
   pause of more than 2 hours a new one starts;
@@ -519,6 +523,29 @@ are set; otherwise the `place_call` tool is not registered.
 Running: a systemd service with auto-restart, `.env` with mode 600, logs in the
 journal. The bot responds only to chats in `ALLOWED_CHAT_IDS`.
 
+Running in a container (an alternative to systemd): a `Dockerfile`, a
+`.dockerignore`, and a compose file, so the bot is delivered as an image.
+
+- The image holds the code, the `scenarios/` files, and the grilling skill
+  (`.agents/skills/grilling/`). The bot reads both at runtime (5.4); an image
+  without them silently loses intake and playbooks.
+- No secrets in the image: `.env` and `client_secret*.json` are in
+  `.dockerignore`, and the variables come from `env_file` at run time.
+- The SQLite database lives on a named volume; otherwise memory, sessions, and
+  scheduled calls disappear with the container.
+- A non-root user, logs to stdout (`docker logs`), `restart: unless-stopped`.
+  Telegram long polling needs no open ports.
+- Time zones from the `tzdata` Python package: slim images may lack the system
+  time zone database.
+- The setup / sync scripts run in the same image, e.g.
+  `docker compose run --rm bot <setup command>`.
+- Build for the server's architecture: a Mac builds arm64, most VPSes are
+  amd64. Either `docker buildx build --platform linux/amd64`, or a CI job that
+  runs the tests and publishes a multi-arch image to a registry on a version
+  tag; the server then only needs the compose file and `.env`.
+- Exactly one container per bot token: two pollers on the same token conflict,
+  and the call scheduler lives inside the process.
+
 Write the code so that it can later serve more than one user (see 14):
 
 - the access check is one function, `is_allowed(chat_id)`; nothing else
@@ -548,7 +575,8 @@ First-run order:
 > report (section 6), then calendar and memory (section 7), then scheduled
 > calls (section 8). Write tests for each block with Retell mocked out; I'll
 > make the real calls myself. Take the keys from .env, and create a
-> .env.example template.
+> .env.example template. Package the bot as a container (Dockerfile, compose
+> file, CI that publishes the image) as described in section 9.
 
 ---
 
@@ -617,6 +645,7 @@ All from real calls. Check that the coding agent took these into account:
 - [ ] Custom `facts_ru` in post-call analysis and in the report.
 - [ ] Intake via the `grilling` skill for every scenario except `general`; one or two rounds; facts from memory and the calendar, not from the user.
 - [ ] Required scenario fields checked in `place_call`, in code.
+- [ ] Container: no secrets in the image, the database on a volume, scenarios and the grilling skill inside, one container per bot token.
 
 ---
 

@@ -1,0 +1,19 @@
+# Locally: docker compose up --build -d
+# On a server with the published image: docker compose pull && docker compose up -d
+services:
+  bot:
+    image: ghcr.io/telegins/zvonilka:latest
+    build: .
+    env_file: .env
+    volumes:
+      - zvonilka-data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # One container per bot token: two pollers on the same token conflict.
+
+volumes:
+  zvonilka-data:

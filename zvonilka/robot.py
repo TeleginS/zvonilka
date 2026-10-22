@@ -10,8 +10,10 @@ from dataclasses import dataclass
 
 LANGUAGE_NAMES = {"es": "Spanish (Spain)", "en": "English", "ru": "Russian"}
 
-# Conversation LLM inside Retell (billed by Retell). "fast" is the priority
-# queue that cut latency from 2.3 to 1.7 s for es and en (spec 4.4).
+# Conversation LLM inside Retell (billed by Retell). The spec's priority queue
+# (tier "fast", 2.3 -> 1.7 s for es and en) isn't offered for this model:
+# Retell answers "supported tiers: standard". Switch to "fast" in VOICES if
+# you move to a model that offers it.
 RETELL_MODEL = "claude-5.5-sonnet"
 
 TWO_HOURS_MS = 2 * 60 * 60 * 1000
@@ -30,8 +32,8 @@ class Voice:
 
 # Tuned on test calls; a voice can only be chosen by listening (spec 4.4).
 VOICES = {
-    "es": Voice("es-ES", "retell-Andrea", None, 0.9, "fast", 1.5, "fast"),
-    "en": Voice("en-US", "11labs-Lily", "eleven_v3", 1.0, "fast", 0.3, "fast"),
+    "es": Voice("es-ES", "retell-Andrea", None, 0.9, "fast", 1.5, "standard"),
+    "en": Voice("en-US", "11labs-Lily", "eleven_v3", 1.0, "fast", 0.3, "standard"),
     "ru": Voice("ru-RU", "11labs-Lily", "eleven_multilingual_v2", 1.1, "accurate", 0.3, "standard"),
 }
 

@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from zvonilka.config import OwnerProfile
 from zvonilka.db import Database
 from zvonilka.llm import LLM
 from zvonilka.tools import ToolInputError
@@ -42,14 +43,34 @@ class Tool:
         return self.schema["name"]
 
 
-def system_prompt(scenario_catalog: str | None) -> str:
-    """Stable between requests so DeepSeek's prefix cache hits (spec 5.4)."""
+def owner_section(owner: OwnerProfile, memory: str) -> str:
+    names = f"{owner.name} {owner.surname}".strip()
+    if owner.name_ru:
+        names += f" (по-русски: {owner.name_ru} {owner.surname_ru}".rstrip() + ")"
+    facts = memory.strip() or "(empty; the user can add facts with /memory)"
+    return (
+        "\nThe user you are talking to is the owner:\n"
+        f"- name: {names}\n"
+        f"- phone: {owner.phone} (when the user says 'call me', call this number)\n"
+        f"- time zone: {owner.timezone.key}\n"
+        "Facts about the owner from /memory:\n"
+        f"{facts}\n"
+        "Use this information; never ask the user for something that is already here.\n"
+    )
+
+
+def system_prompt(scenario_catalog: str | None, owner: OwnerProfile | None = None, memory: str = "") -> str:
+    """Stable between requests so DeepSeek's prefix cache hits (spec 5.4): the
+    owner section changes only after /memory, the current time goes into the
+    user message."""
     base = (
         "You are the user's personal assistant in Telegram. Reply briefly, in Russian.\n\n"
         "Each user message starts with the current time and the owner's time zone in square "
         "brackets. Use them to turn relative times ('tomorrow at 10') into ISO date-times in "
         "that time zone.\n"
     )
+    if owner is not None:
+        base += owner_section(owner, memory)
     if scenario_catalog is None:
         return base + "\nPhone calls are not configured yet; say so if the user asks for a call.\n"
     return base + (
@@ -70,7 +91,7 @@ class Assistant:
         db: Database,
         tools: Sequence[Tool],
         *,
-        system: str,
+        system: str | Callable[[], str],
         tz: ZoneInfo,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
@@ -78,7 +99,8 @@ class Assistant:
         self._db = db
         self._tools = {tool.name: tool for tool in tools}
         self._schemas = [tool.schema for tool in tools]
-        self._system = system
+        # A callable is rebuilt per request, so /memory changes reach the next message.
+        self._system = system if callable(system) else (lambda: system)
         self._tz = tz
         self._now = now
         self._locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -88,9 +110,10 @@ class Assistant:
             messages = self._load(chat_id)
             messages.append({"role": "user", "content": self._stamp(text)})
             reply_text = ""
+            system = self._system()
             try:
                 for _ in range(MAX_STEPS):
-                    reply = await self._llm.create(system=self._system, messages=messages, tools=self._schemas)
+                    reply = await self._llm.create(system=system, messages=messages, tools=self._schemas)
                     if reply.blocks:
                         messages.append({"role": "assistant", "content": reply.blocks})
                     reply_text = reply.text or reply_text

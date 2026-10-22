@@ -77,6 +77,32 @@ def test_without_retell_there_are_no_call_tools(tmp_path):
     assert components.assistant._schemas == []
 
 
+async def test_telegram_sends_retry_only_on_connection_errors():
+    import pytest
+    from telegram.error import BadRequest, NetworkError
+
+    from zvonilka.bot import with_retries
+
+    calls = []
+
+    async def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise NetworkError("httpx.ConnectError")
+        return "sent"
+
+    assert await with_retries(flaky, delay=0) == "sent" and len(calls) == 3
+
+    async def bad():
+        calls.append(1)
+        raise BadRequest("chat not found")
+
+    calls.clear()
+    with pytest.raises(BadRequest):
+        await with_retries(bad, delay=0)
+    assert len(calls) == 1
+
+
 def test_telegram_application_builds(tmp_path):
     from zvonilka.bot import build_application, split_message
 

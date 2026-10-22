@@ -25,9 +25,10 @@ from zvonilka.db import Database
 from zvonilka.llm import LLM
 from zvonilka.models import CallRequest
 from zvonilka.scenarios import Scenarios
-from zvonilka.tools import parse_place_call, place_call_schema, scenario_guide_schema
+from zvonilka.tools import normalize_phone, parse_place_call, place_call_schema, scenario_guide_schema
 
 LANGUAGES = ["es", "en", "ru"]
+OWNER_PHONE = [""]  # filled from the config in run_all(), normalized to E.164
 
 
 @dataclass
@@ -98,6 +99,8 @@ CASES: list[tuple[str, Check]] = [
     ("позвони прямо сейчас в пиццерию +34 931 11 22 33 и спроси, до скольки доставка", one_call(immediate)),
     ("забронируй столик в Disfrutar на 4 человек на субботу в 20:30, номер +34 933 48 68 96", one_call(immediate)),
     ("позвони мне на +34 611 223 344 и скажи привет", one_call(immediate)),
+    ("позвони мне и напомни про встречу", one_call(lambda r, n: None if r.to_number == OWNER_PHONE[0] else f"expected the owner's phone, got {r.to_number}")),
+    ("как меня зовут?", no_call),
     ("позвони в 18:00 в парикмахерскую +34 934 56 78 90, запиши меня на стрижку на пятницу", one_call(scheduled_at(18))),
     ("завтра в 10 утра позвони в автошколу +34 935 55 44 33 и спроси цену практических занятий", one_call(scheduled_at(10, days=1))),
     ("запиши меня к стоматологу на декабрь, клиника +34 932 00 11 22", one_call(lambda r, n: None if r.availability_from and r.availability_from.month == 12 else f"expected availability_from in December, got {r.availability_from}")),
@@ -138,7 +141,8 @@ async def run_case(llm: LLM, scenarios: Scenarios, owner: OwnerProfile, text: st
     ]
     with tempfile.TemporaryDirectory() as tmp:
         db = Database(f"{tmp}/routing.db")
-        assistant = Assistant(llm, db, tools, system=system_prompt(scenarios.catalog()), tz=owner.timezone, now=lambda: now)
+        system = system_prompt(scenarios.catalog(), owner)
+        assistant = Assistant(llm, db, tools, system=system, tz=owner.timezone, now=lambda: now)
         reply = await assistant.handle(1, text, approve)
         db.close()
     return Outcome(calls=calls, guides=guides, reply=reply)
@@ -148,6 +152,7 @@ async def run_all() -> int:
     load_dotenv()
     settings = LLMSettings.from_env(os.environ)
     owner = OwnerProfile.from_env(os.environ)
+    OWNER_PHONE[0] = normalize_phone(owner.phone)
     llm = LLM(settings)
     scenarios = Scenarios.load()
     now = datetime.now(UTC).astimezone(owner.timezone).replace(hour=12, minute=0, second=0, microsecond=0)

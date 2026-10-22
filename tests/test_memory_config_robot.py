@@ -88,7 +88,8 @@ def test_prompt_has_the_rules_and_variables():
     assert "AI assistant" in prompt and "SILENTLY" in prompt and "press_digit" in prompt
     tools = [t["type"] for t in robot.llm_params("es")["general_tools"]]
     assert tools == ["end_call", "press_digit"]
-    assert robot.llm_params("es")["model_config"]["primary"]["tier"] == "fast"
+    assert robot.llm_params("es")["model_config"]["primary"]["tier"] == "standard"
+    assert robot.llm_params("es", tier="fast")["model_config"]["primary"]["tier"] == "fast"
 
 
 # Scenarios (spec 4.7, 5.5)

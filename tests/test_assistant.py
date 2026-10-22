@@ -91,6 +91,22 @@ async def test_time_goes_into_user_message_and_system_prompt_is_stable(db):
     assert len(llm.requests[1]["messages"]) == 3
 
 
+async def test_system_prompt_knows_the_owner_and_follows_memory(db, owner):
+    memory = ["Аллергия на орехи"]
+    llm = FakeLLM([text("Сергей"), text("ок")])
+    assistant = Assistant(
+        llm, db, [], system=lambda: system_prompt(None, owner, memory[0]), tz=TZ, now=lambda: NOW
+    )
+    confirm, _ = confirmer([])
+    await assistant.handle(1, "как меня зовут?", confirm)
+    first = llm.requests[0]["system"]
+    assert "Sergei Telegin" in first and "Сергей Телегин" in first
+    assert "+34600000000" in first and "Аллергия на орехи" in first
+    memory[0] = "Полис 123"
+    await assistant.handle(1, "что ты обо мне знаешь?", confirm)
+    assert "Полис 123" in llm.requests[1]["system"]
+
+
 async def test_new_session_after_two_hours(db):
     current = [NOW]
     llm = FakeLLM([text("ок"), text("ок")])
@@ -114,6 +130,16 @@ async def test_crash_mid_loop_leaves_a_valid_history(db):
         pass
     messages, _ = db.load_session(1)
     assert messages[-1]["content"][0] == {"type": "tool_result", "tool_use_id": "t1", "content": "Error: interrupted"}
+
+
+async def test_clear_session_starts_fresh(db):
+    llm = FakeLLM([text("ок"), text("ок")])
+    assistant, _ = make(llm, db)
+    confirm, _ = confirmer([])
+    await assistant.handle(1, "привет", confirm)
+    db.clear_session(1)
+    await assistant.handle(1, "снова", confirm)
+    assert len(llm.requests[1]["messages"]) == 1
 
 
 def test_trim_history_keeps_tool_pairs_together():

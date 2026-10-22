@@ -59,7 +59,52 @@ uv run pytest
 Retell и LLM в тестах подменены; настоящие звонки — по сценариям приёмки из
 раздела 11 спецификации.
 
-## Сервер
+## Сервер: Docker
+
+Образ содержит код, `scenarios/` и скилл `grilling`. Секретов в нём нет:
+переменные берутся из `.env` при запуске. База SQLite лежит в томе
+`zvonilka-data`.
+
+Собрать и запустить на месте:
+
+```bash
+docker compose up --build -d
+docker compose logs -f
+```
+
+Скрипты запускаются в том же образе:
+
+```bash
+docker compose run --rm bot zvonilka-setup-agents
+docker compose run --rm bot zvonilka-sync-agents
+docker compose run --rm bot zvonilka-routing-tests
+```
+
+Готовый образ: по тегу версии GitHub Actions прогоняет тесты и публикует
+образ для amd64 и arm64 в `ghcr.io/telegins/zvonilka`
+(`.github/workflows/image.yml`):
+
+```bash
+git tag v0.1.0 && git push --tags
+```
+
+На сервере нужны только `compose.yaml` и `.env`:
+
+```bash
+docker login ghcr.io            # если пакет приватный
+docker compose pull && docker compose up -d
+```
+
+Собрать для сервера вручную с Mac (Mac собирает arm64, большинство VPS — amd64):
+
+```bash
+docker buildx build --platform linux/amd64 -t ghcr.io/telegins/zvonilka:latest --push .
+```
+
+Запускайте один контейнер на один токен бота: два экземпляра с одним токеном
+мешают друг другу получать сообщения, а планировщик звонков живёт внутри процесса.
+
+## Сервер: systemd
 
 Скопировать проект в `/opt/zvonilka`, `uv sync`, положить `.env` (права 600),
 поставить `deploy/zvonilka.service` в `/etc/systemd/system/` и включить:

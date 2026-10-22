@@ -10,6 +10,7 @@ dependencies = [
     "python-telegram-bot>=22.0",
     "pyyaml>=6.0",
     "retell-sdk>=6.0",
+    "tzdata>=2026.5",
 ]
 
 [project.scripts]
