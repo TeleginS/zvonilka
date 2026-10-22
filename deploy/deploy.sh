@@ -20,6 +20,11 @@ ENV_SOURCE=".env.$HOST"
 
 cd "$(dirname "$0")/.."
 
+if ! docker info >/dev/null 2>&1; then
+  echo "local Docker isn't running: the image is built here. Start Docker Desktop (open -a Docker) and retry." >&2
+  exit 1
+fi
+
 upload_env=0
 if [[ "${ENV_FILE:-0}" == 1 ]] || ! ssh "$HOST" "test -f '$DIR/.env'"; then
   upload_env=1
