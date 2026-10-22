@@ -1,0 +1,36 @@
+[project]
+name = "zvonilka"
+version = "0.1.0"
+description = "Telegram assistant that phones businesses on the owner's behalf"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=2.1",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "python-telegram-bot>=22.0",
+    "pyyaml>=6.0",
+    "retell-sdk>=6.0",
+]
+
+[project.scripts]
+zvonilka = "zvonilka.__main__:main"
+zvonilka-setup-agents = "zvonilka.setup_agents:main"
+zvonilka-sync-agents = "zvonilka.sync_agents:main"
+zvonilka-routing-tests = "zvonilka.routing_tests:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["zvonilka"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,16 @@
+[Unit]
+Description=Zvonilka: Telegram assistant that makes phone calls
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zvonilka
+WorkingDirectory=/opt/zvonilka
+# The bot reads /opt/zvonilka/.env itself; keep it chmod 600.
+ExecStart=/opt/zvonilka/.venv/bin/python -m zvonilka
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
