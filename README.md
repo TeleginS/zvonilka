@@ -95,6 +95,16 @@ docker login ghcr.io            # если пакет приватный
 docker compose pull && docker compose up -d
 ```
 
+Выложить на свой сервер без registry, одной командой (хост из `~/.ssh/config`,
+по умолчанию `aeza`): скрипт соберёт образ под архитектуру сервера, передаст
+его по SSH, обновит `compose.yaml` и перезапустит бота. `.env` загружается,
+если его на сервере ещё нет, или с `ENV_FILE=1`:
+
+```bash
+deploy/deploy.sh
+ENV_FILE=1 deploy/deploy.sh   # после правки .env
+```
+
 Собрать для сервера вручную с Mac (Mac собирает arm64, большинство VPS — amd64):
 
 ```bash
