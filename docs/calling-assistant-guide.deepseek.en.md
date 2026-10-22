@@ -50,7 +50,11 @@ Additionally:
 - the robot knows the owner's free slots from Google Calendar and books only
   free time;
 - `/memory <text>` adds facts about the owner to memory (phone, allergies,
-  insurance policy number), and the robot uses them in the conversation.
+  insurance policy number), and the robot uses them in the conversation;
+- a call to a real estate agent about a rental listing ("call the agent about
+  the flat on Idealista, ref. 12345, Carrer de Mallorca, €1,400") checks
+  whether the flat is still available, collects the conditions, and books a
+  viewing (4.7).
 
 Call languages: Spanish, English, Russian. Others are easy to add.
 
@@ -159,6 +163,7 @@ was paid for with a failed call.
 | "Don't hang up right after the greeting or before the other party has answered. If you didn't catch something, ask them to repeat; never end the call because of poor audio" | drops in the first seconds |
 | "Once the other party has confirmed the objective, say goodbye in ONE short phrase and immediately end the call with the tool. Never say 'ending the call' out loud. Don't drag out the goodbye, don't repeat thanks" | otherwise the robot stretches the goodbye for 30 seconds and voices its internal actions |
 | "Be brief and polite, confirm details. If there are no openings, ask for alternatives" | basic manners |
+| "Additional rules for this type of call (may be empty): {{playbook}}. Where they conflict with the rules above, they take priority" | rules for specific call types without a separate agent per type (4.7) |
 
 On AI disclosure: it's tempting to write "never say you are a bot", because
 some operators hang up. Don't do it: a robot posing as a human violates
@@ -220,7 +225,8 @@ When each call starts, the agent receives substitutions:
 - `caller_name`, `caller_full_name`, `caller_phone` — from the owner config
   (the Cyrillic form of the name for ru);
 - `about_me` — the owner's entire memory text;
-- `availability` — free slots from the calendar, format in 7.1.
+- `availability` — free slots from the calendar, format in 7.1;
+- `playbook` — the rules for the call's scenario, empty for `general` (4.7).
 
 Plus call metadata: the language, so you can later tell which agent made the
 call.
@@ -232,6 +238,50 @@ field `summary_ru` with the description: "A short summary of the conversation
 STRICTLY in Russian (1–2 sentences): objective, outcome, key arrangements. Only
 in Russian, even if the conversation was in another language." Use it in the
 report, falling back to the English one if it's missing.
+
+A second custom field, `facts_ru`: "Concrete facts learned in the call,
+STRICTLY in Russian, one per line: prices, dates and times, conditions,
+requirements, names, agreed next steps. Empty if nothing concrete was
+learned." The summary says how the call went; this field keeps the details
+that don't fit into two sentences (for a rental call: rent, deposit, fees,
+viewing time).
+
+### 4.7 Scenario playbooks
+
+Some call types need rules on top of the general prompt. They live in code as
+playbooks: one text block per scenario, chosen by the `scenario` parameter of
+`place_call` (5.2) and passed into the call as `{{playbook}}`. This keeps one
+agent per language instead of one per language and scenario. `general` has an
+empty playbook. A new scenario is a scenario file with an intake and a
+playbook (5.5), a new `scenario` value, and a new acceptance scenario.
+
+Unlike the rules in 4.2, the playbook below hasn't been tested on real calls
+yet. Treat it as a starting point and tune it the same way (5–10 test calls).
+
+**`rental_inquiry`: calling a real estate agent about a rental listing**
+
+| Rule | Why |
+|------|-----|
+| "Start by naming the listing: reference, address or area, price, and where it was published (from {{details}})" | an agency handles dozens of flats; without this they can't tell which one you mean |
+| "Find out, in this order, only what isn't already in {{details}}: whether the flat is still available; the monthly rent and what it includes (community fees, utilities); the deposit (fianza) and any additional guarantee; agency fees and who pays them; contract type and minimum term (long-term or temporary); the earliest move-in date; furnished or not; whether pets are allowed; which documents they need" | the deal-breaker goes first; if the flat is gone, the rest doesn't matter |
+| "If the flat is available, propose a viewing in the owner's free slots. If it isn't, ask whether they have something similar in the same area and price range, and note it" | a viewing is the real result of the call; an "it's gone" call can still produce leads |
+| "Answer questions about the tenant (job, contract type, income, who will live there, pets) ONLY from {{about_me}}. Whatever isn't there, the owner will send with the documents" | agents screen tenants on the first call; an invented income is worse than "I'll send it" |
+| "Agreeing to send documents or details afterwards by email or WhatsApp is fine: give {{caller_phone}} or the email from {{about_me}}. But availability and the viewing are settled on this call" | here sending documents is the normal next step, not a brush-off; this rule overrides the general "don't agree to email" rule |
+| "Don't commit to anything: don't agree to rent, don't accept the price, don't agree to pay a reservation deposit (señal) or any fee, don't give bank or card details. Say the owner will decide after the viewing" | the robot collects information and books viewings; deciding and paying are the owner's job |
+| "If they answer in Catalan, politely ask whether you can continue in Spanish" | Barcelona agencies sometimes answer in Catalan, and the es agent is set up for Spanish |
+
+The viewing is not added to the calendar automatically: the bot has read-only
+access (7.1). Add it yourself from the report.
+
+What the owner should know about Spanish rental rules (check that they are
+still current; the robot doesn't argue with the agent, it only records the
+answers): since Ley 12/2023, for a long-term rental of a primary home the
+agency fees are paid by the landlord, not the tenant; the legal deposit for a
+home is one month's rent, and an additional guarantee is capped at two months'
+rent for contracts of up to five years. Temporary rentals (alquiler de
+temporada) don't fall under these rules, which is one reason agencies offer
+them. The answers about fees and contract type end up in `facts_ru`, so you see
+them before the viewing.
 
 ---
 
@@ -267,6 +317,7 @@ Parameters:
 | `details` | string | details: date, time, number of people, name, what to ask |
 | `when` | string, ISO datetime | **only** if the user explicitly named a future time ("at 18:00", "tomorrow at 10", "in an hour"). If they said "now" or named no time, do not pass it at all; the call goes out immediately |
 | `availability_from` | string, ISO date | start of the period in which the booking is needed. **Only** if the booking is explicitly not for the near term ("book something in October" → October 1st). Otherwise do not pass it |
+| `scenario` | `general` / `rental_inquiry` | `rental_inquiry` for a call to a real estate agent or a landlord about renting a home; `general` for everything else. For `rental_inquiry`, `details` must include the listing's reference, address or area, price, and where it was published, plus the owner's requirements (move-in date, budget, questions). If the user didn't give the reference or the address, ask for them before calling (intake, 5.5) |
 
 The "only" and "do not pass" wording in the tool description matters: without
 it the model scheduled calls "for now" and passed `availability_from` for every
@@ -348,7 +399,10 @@ Routing tests. A small script with 15–20 sample user messages and the expected
 tool call (or no call) for each, run against the real API of the chosen
 provider. At minimum: "call now" → no `when`; "call at 18:00" → `when` set;
 a plain booking → no `availability_from`; "book something in October" →
-`availability_from` set; a message that isn't about calls → no `place_call`.
+`availability_from` set; a call to an agent about a listing →
+`scenario: rental_inquiry`; a rental request without a reference or address
+→ no `place_call`, the bot asks; a message that isn't about calls → no
+`place_call`.
 Run it after changing the provider, the model, or the tool descriptions.
 
 Why not the Claude Agent SDK here: it can be pointed at DeepSeek through
@@ -356,6 +410,78 @@ Why not the Claude Agent SDK here: it can be pointed at DeepSeek through
 control over thinking, history, and the confirmation step. A loop of your own
 over the Messages API is a few dozen lines and behaves the same on both
 providers.
+
+### 5.5 Intake: questions to the user before the call
+
+For every scenario except `general`, the bot asks the user for what's missing
+before it calls. The questioning method is the `grilling` skill from the
+repo, `.agents/skills/grilling/SKILL.md`: questions go in rounds, each one
+numbered and with a recommended answer, worded so that "yes" accepts the
+recommendation, and the next round comes only after the answers. The bot reads
+the skill text at runtime (without the frontmatter), so a change to the skill
+reaches the bot without touching the code. This works the same on DeepSeek and
+Claude: the skill is just text returned by a tool.
+
+How it's wired:
+
+- Each scenario is a file `scenarios/<name>.md` with two sections: **intake**
+  (required fields, the decisions to put to the user, how to write `details`)
+  and **playbook** (rules for the robot, 4.7).
+- The system prompt lists the scenarios, one line each. When the model
+  recognizes a scenario, it calls the `get_scenario_guide(scenario)` tool,
+  which returns the grilling method, the adaptation rules below, and the
+  scenario's intake. The full text is loaded only when it's needed, and the
+  system prompt stays short and stable for caching (5.4).
+- `place_call` checks the scenario's required fields in code. If any are
+  missing, the tool returns an error naming them, and the bot asks the user
+  instead of calling.
+
+The skill is written for a coding agent. For the bot, these rules take
+priority over it:
+
+- The design tree is the call brief, not an open-ended plan. Ask only about
+  the required fields and the decisions listed in the scenario's intake, and
+  not "relentlessly": usually one round, at most two.
+- Facts come from the user's message, memory (7.2), and the calendar (7.1);
+  never ask the user for them. The bot has no sub-agents; it looks facts up
+  with its own tools.
+- Keep the skill's round format (❓ Q1 … ➡️ recommendation), in Russian. A
+  reply of «да» accepts all recommendations; the user can also answer single
+  questions by number.
+- The skill's final "confirm we've reached a shared understanding" is the
+  «Да / Нет» confirmation of `place_call` (5.3). Don't ask for a separate text
+  confirmation.
+- If the user gave facts about themselves during intake (job, income, pets),
+  offer in one line, after the call is placed, to save them with `/memory`.
+- `general` calls skip intake entirely and work as before.
+
+Intake for `rental_inquiry`:
+
+- required fields: the listing's reference or address, the price, and where
+  it was published;
+- decisions to put to the user: which contract types are acceptable
+  (long-term only, or temporary too); whether to ask for similar flats if this
+  one is taken; when to view (the nearest free slot or specific days); any
+  questions of their own beyond the list in 4.7;
+- from memory, don't ask: the tenant profile (7.2). If part of it is missing,
+  ask for it once, in the same round.
+
+An example round:
+
+```
+❓ Q1 — Тип аренды: рассматриваем только долгосрочную?
+➡️ Да, только долгосрочную
+
+❓ Q2 — Если квартиру уже сдали: спросить похожие варианты в том же районе?
+➡️ Да
+
+❓ Q3 — Просмотр: записываться на ближайшее свободное окно из календаря?
+➡️ Да
+```
+
+The skill file is shared with the coding agents that work on this repo. If
+its wording for development drifts away from what suits the bot, copy it into
+`scenarios/` and load the copy instead.
 
 ---
 
@@ -415,7 +541,8 @@ Header by status:
 | `timeout` | ⏱ Звонок прерван по таймауту | Call cut off by timeout |
 | `failed` | ❌ Звонок не удался | Call failed |
 
-Then the summary (`summary_ru`), the duration in seconds, and, as a separate
+Then the summary (`summary_ru`), the facts (`facts_ru`, if not empty), the
+duration in seconds, and, as a separate
 message, the audio recording: download it from the Retell link and send it as
 audio, or as a document if that fails.
 
@@ -452,6 +579,11 @@ before saving: if the model returned an empty answer or something that isn't a
 list of facts, keep the old memory and report the error. `/memory` without
 text shows the current memory. The entire memory text goes into
 `{{about_me}}`.
+
+For rental calls (4.7), memory should hold the tenant profile: job and
+contract type, net monthly income, who will live in the flat, pets, desired
+move-in date, budget, and an email for documents. Without it the robot can
+only promise that the owner will send the details later.
 
 ---
 
@@ -499,6 +631,15 @@ are set; otherwise the `place_call` tool is not registered.
 
 Running: a systemd service with auto-restart, `.env` with mode 600, logs in the
 journal. The bot responds only to chats in `ALLOWED_CHAT_IDS`.
+
+Write the code so that it can later serve more than one user (see 14):
+
+- the access check is one function, `is_allowed(chat_id)`; nothing else
+  compares chat ids with `ALLOWED_CHAT_IDS`;
+- the owner's data (name, Cyrillic name, phone, time zone, memory, calendar
+  settings) is one profile object, loaded from the config at startup and
+  passed to the code that needs it. The rest of the code doesn't read these
+  values from the environment directly.
 
 First-run order:
 
@@ -562,6 +703,15 @@ the call) on DeepSeek, and the first three again after switching
   without waiting for the call to end.
 - [ ] The report summary is in Russian, even if the conversation was in
   Spanish.
+- [ ] Rental call (someone plays the agent on your number): the robot names
+  the listing, asks whether it's available and about the conditions, proposes
+  a viewing in a free slot, agrees to receive documents by WhatsApp, refuses
+  to pay a reservation deposit; the report lists the facts.
+- [ ] Rental request without a reference or address → the bot asks one round
+  of questions in the grilling format and doesn't call.
+- [ ] Reply «да» to the round → the recommendations are accepted, the
+  «Да / Нет» call confirmation appears, no extra text confirmation.
+- [ ] A `general` call → no questions, straight to the confirmation.
 - [ ] Bot replies arrive within a few seconds (thinking really is disabled).
 
 ---
@@ -594,6 +744,11 @@ agent took these into account:
 - [ ] Tool arguments validated in code; empty / "now" `when` treated as absent.
 - [ ] Stable system prompt and tools; current time in the user message.
 - [ ] Routing tests pass on the provider and model in use.
+- [ ] Access check in one `is_allowed()` function; owner data in one profile object.
+- [ ] Scenario playbooks in code; `rental_inquiry` allows sending documents afterwards but forbids commitments and payments.
+- [ ] Custom `facts_ru` in post-call analysis and in the report.
+- [ ] Intake via the `grilling` skill for every scenario except `general`; one or two rounds; facts from memory and the calendar, not from the user.
+- [ ] Required scenario fields checked in `place_call`, in code.
 
 ---
 
@@ -629,3 +784,8 @@ changes the total. An hour of waiting on hold costs correspondingly more; the
   HTTPS, which this design deliberately does without.
 - **Retry on no answer**: on `no_answer` status, schedule the call again in
   15 minutes.
+- **Selling calls to other users** for Telegram Stars: access from a users
+  table instead of `ALLOWED_CHAT_IDS`, a balance in minutes, a profile per
+  user, abuse limits. The plan is in
+  https://github.com/TeleginS/zvonilka/issues/1. The `is_allowed()` and
+  profile requirements from section 9 keep this change local.
