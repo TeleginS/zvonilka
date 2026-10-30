@@ -63,7 +63,7 @@ Call languages: Spanish, English, Russian. Others are easy to add.
 | Retell AI account | retellai.com | voice calls: telephony, speech recognition, speech synthesis, LLM for the conversation |
 | Phone number | Retell dashboard | US numbers (+1) can be bought in a couple of clicks, about $2/month. Connecting your own European number goes through SIP/Twilio and is a separate hassle. A robot calling from a US number reaches Spanish restaurants and clinics just fine |
 | Google OAuth (optional) | console.cloud.google.com, Desktop type | read the calendar for free slots |
-| VPS | any, 1 vCPU / 1 GB | the bot must run around the clock |
+| VPS | any, 1 vCPU / 1 GB is enough; e.g. [Aeza](https://aeza.net/?ref=937107) (referral link) has 1 vCPU, 4 GB RAM, 10 GB NVMe for €2/month | the bot must run around the clock |
 
 Keep at hand: `TELEGRAM_BOT_TOKEN`, your `chat_id`, `ANTHROPIC_API_KEY`,
 `RETELL_API_KEY`, the purchased number, and optionally the Google client id /
@@ -653,7 +653,7 @@ All from real calls. Check that the coding agent took these into account:
 
 Ballpark for a 3–5 minute call: Retell (telephony, recognition, synthesis, LLM)
 about $0.5–1, the number about $2 per month, plus pennies of Anthropic usage
-for parsing the task in the bot, plus a VPS at $6–12 per month. An hour of
+for parsing the task in the bot, plus a VPS from €2 per month. An hour of
 waiting on hold costs correspondingly more; the 2-hour ceiling is set
 deliberately.
 
@@ -671,8 +671,6 @@ deliberately.
   HTTPS, which this design deliberately does without.
 - **Retry on no answer**: on `no_answer` status, schedule the call again in
   15 minutes.
-- **Selling calls to other users** for Telegram Stars: access from a users
-  table instead of `ALLOWED_CHAT_IDS`, a balance in minutes, a profile per
-  user, abuse limits. The plan is in
-  https://github.com/TeleginS/zvonilka/issues/1. The `is_allowed()` and
-  profile requirements from section 9 keep this change local.
+- **Several users**: access from a users table instead of
+  `ALLOWED_CHAT_IDS`, a profile per user, abuse limits. The `is_allowed()`
+  and profile requirements from section 9 keep this change local.
