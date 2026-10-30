@@ -30,7 +30,10 @@ Then fill in `.env` (see `.env.example`):
   `OWNER_SURNAME_RU`, and `OWNER_PHONE` (your real phone: the robot gives it
   out when booking)
 - optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_IDS`
+  `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_IDS`. With the client id and
+  secret in `.env`, `uv run zvonilka-google-token` opens the Google sign-in
+  and prints the refresh token. While the OAuth app is in Testing status the
+  token expires after 7 days; publish the app to keep it
 
 Calls are enabled only once the Retell key, the number and at least one agent
 are set. `make env-check` shows which variables are set without printing them.

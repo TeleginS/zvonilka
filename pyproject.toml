@@ -18,6 +18,7 @@ zvonilka = "zvonilka.__main__:main"
 zvonilka-setup-agents = "zvonilka.setup_agents:main"
 zvonilka-sync-agents = "zvonilka.sync_agents:main"
 zvonilka-routing-tests = "zvonilka.routing_tests:main"
+zvonilka-google-token = "zvonilka.google_token:main"
 
 [dependency-groups]
 dev = [
