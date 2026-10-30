@@ -1,8 +1,8 @@
 """Which variables are set, without printing their values.
 
     python -m zvonilka.env_check            # .env in the current directory
-    python -m zvonilka.env_check .env.aeza  # another file
-    python -m zvonilka.env_check -          # only the process environment (in a container)
+    python -m zvonilka.env_check .env.my-server  # another file
+    python -m zvonilka.env_check -               # only the process environment (in a container)
 """
 
 from __future__ import annotations

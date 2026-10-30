@@ -141,18 +141,18 @@ docker compose pull && docker compose up -d
 ```
 
 To ship to your own server without a registry, in one command (host from
-`~/.ssh/config`, `aeza` by default): the script builds the image for the
+`~/.ssh/config`, `my-server` by default): the script builds the image for the
 server's architecture, sends it over SSH, updates `compose.yaml` and restarts
 the bot.
 
-The server's variables live in `.env.<host>` (e.g. `.env.aeza`), not in the
+The server's variables live in `.env.<host>` (e.g. `.env.my-server`), not in the
 local `.env`: the local bot has its own token. The script uploads
 `.env.<host>` when the server has no `.env` yet, or with `ENV_FILE=1`; it
 never uploads the plain `.env`:
 
 ```bash
 deploy/deploy.sh
-ENV_FILE=1 deploy/deploy.sh   # after editing .env.aeza
+ENV_FILE=1 deploy/deploy.sh   # after editing .env.my-server
 ```
 
 To build for the server by hand on a Mac (a Mac builds arm64, most VPSs are amd64):

@@ -1,7 +1,7 @@
 # make help — list the commands.
 # Server targets use HOST from ~/.ssh/config: make server-logs HOST=other
 
-HOST ?= aeza
+HOST ?= my-server
 REMOTE_DIR ?= /opt/zvonilka
 SSH = ssh $(HOST) 'cd $(REMOTE_DIR) &&
 VERSION ?=

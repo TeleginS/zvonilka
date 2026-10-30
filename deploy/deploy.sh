@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Build the image for the server, ship it over SSH, and restart the bot.
 #
-#   deploy/deploy.sh [ssh-host]          # default host: aeza (from ~/.ssh/config)
+#   deploy/deploy.sh [ssh-host]          # default host: my-server (from ~/.ssh/config)
 #   ENV_FILE=1 deploy/deploy.sh          # also upload .env.<host>
 #
-# The server's variables live in .env.<host> (e.g. .env.aeza), never in the
+# The server's variables live in .env.<host> (e.g. .env.my-server), never in the
 # local .env: the local bot has its own token, and uploading it would move the
 # server bot onto it. .env.<host> is uploaded when the server has no .env yet,
 # or with ENV_FILE=1.
@@ -13,7 +13,7 @@
 # the image goes through `docker save | ssh docker load`.
 set -euo pipefail
 
-HOST="${1:-aeza}"
+HOST="${1:-my-server}"
 DIR="${REMOTE_DIR:-/opt/zvonilka}"
 IMAGE="ghcr.io/telegins/zvonilka:latest"
 ENV_SOURCE=".env.$HOST"
