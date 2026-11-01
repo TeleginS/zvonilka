@@ -1,8 +1,14 @@
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
-from tests.conftest import FakeLLM, text
+from tests.conftest import FakeLLM, FakeNotifier, text
 from zvonilka import robot
+from zvonilka.app import build_components
+from zvonilka.bot import Handlers
 from zvonilka.config import Config, ConfigError, LLMSettings, RetellSettings
+from zvonilka.llm import LLMReply
 from zvonilka.memory import MemoryMergeError, clean_facts, merge_memory
 from zvonilka.scenarios import parse_scenario
 
@@ -13,6 +19,44 @@ async def test_merge_memory_uses_memory_model():
     llm = FakeLLM([text("- Аллергия на орехи\n2. Полис 12345")])
     assert await merge_memory(llm, "Аллергия на орехи", "номер полиса 12345") == "Аллергия на орехи\nПолис 12345"
     assert llm.requests[0]["model"] == "deepseek-flash"
+
+
+class SlowMergingLLM(FakeLLM):
+    """Appends the instruction to the current list, after a pause like a real LLM call."""
+
+    def __init__(self):
+        super().__init__([])
+
+    async def create(self, **kwargs) -> LLMReply:
+        await asyncio.sleep(0.01)
+        prompt = kwargs["messages"][0]["content"]
+        current, instruction = prompt.removeprefix("Current list:\n").split("\n\nInstruction:\n")
+        facts = [] if current == "(empty)" else current.splitlines()
+        return text("\n".join(facts + [instruction]))
+
+
+def memory_command(text_: str) -> SimpleNamespace:
+    async def reply_text(_):
+        pass
+
+    return SimpleNamespace(
+        effective_chat=SimpleNamespace(id=1),
+        effective_message=SimpleNamespace(text=text_, reply_text=reply_text),
+    )
+
+
+async def test_concurrent_memory_commands_keep_both_facts(db):
+    notifier = FakeNotifier()
+    config = Config.from_env(BASE_ENV)
+    components = build_components(config, notifier, llm=SlowMergingLLM(), db=db)
+    handlers = Handlers(config, components, confirmations=None, notifier=notifier)
+
+    await asyncio.gather(
+        handlers.on_memory(memory_command("/memory Аллергия на орехи"), None),
+        handlers.on_memory(memory_command("/memory Полис 12345"), None),
+    )
+
+    assert db.get_memory() == "Аллергия на орехи\nПолис 12345"
 
 
 @pytest.mark.parametrize("bad", ["", "   \n", "```\nfacts\n```", "x" * 400])

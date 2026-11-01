@@ -140,6 +140,9 @@ class Handlers:
         self._c = components
         self._confirmations = confirmations
         self._notifier = notifier
+        # Updates run concurrently, and a merge is a slow LLM call: without the lock
+        # two quick /memory commands read the same old list and one fact is lost.
+        self._memory_lock = asyncio.Lock()
 
     def register(self, app: Application) -> None:
         app.add_handler(CommandHandler(["start", "help"], self.on_help))
@@ -190,12 +193,13 @@ class Handlers:
             current = db.get_memory()
             await self._notifier.send_text(update.effective_chat.id, current or "Память пуста. Добавить: /memory <текст>")
             return
-        try:
-            updated = await merge_memory(self._c.llm, db.get_memory(), instruction)
-        except MemoryMergeError as e:
-            await update.effective_message.reply_text(f"Не получилось обновить память, оставил как было: {e}")
-            return
-        db.set_memory(updated)
+        async with self._memory_lock:
+            try:
+                updated = await merge_memory(self._c.llm, db.get_memory(), instruction)
+            except MemoryMergeError as e:
+                await update.effective_message.reply_text(f"Не получилось обновить память, оставил как было: {e}")
+                return
+            db.set_memory(updated)
         await self._notifier.send_text(update.effective_chat.id, f"Запомнил. Сейчас в памяти:\n{updated}")
 
     async def on_new(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
